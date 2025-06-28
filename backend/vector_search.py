@@ -57,11 +57,11 @@ def list_available_collections() -> List[str]:
 def list_relevant_collections(query: str, max_collections: int = 10) -> List[Dict]:
     """
     List collections ranked by relevance to the query
-    
+
     Args:
         query: The search query to rank collections against
         max_collections: Maximum number of collections to return
-    
+
     Returns:
         List of dicts with collection info sorted by relevance
     """
@@ -69,9 +69,9 @@ def list_relevant_collections(query: str, max_collections: int = 10) -> List[Dic
         all_collections = list_available_collections()
         if not all_collections:
             return []
-        
+
         collection_scores = []
-        
+
         for collection_name in all_collections:
             try:
                 # Get the best matching document from this collection
@@ -80,39 +80,44 @@ def list_relevant_collections(query: str, max_collections: int = 10) -> List[Dic
                     embedding_function=embeddings,
                     persist_directory=CHROMA_DB_PATH,
                 )
-                
+
                 # Search for the single most relevant document in this collection
                 results = vector_store.similarity_search_with_score(query, k=1)
-                
+
                 if results:
                     doc, best_score = results[0]
                     repo_name = doc.metadata.get("repo_name", "Unknown")
                     doc_type = doc.metadata.get("type", "unknown")
-                    
-                    collection_scores.append({
-                        "collection_name": collection_name,
-                        "repo_name": repo_name,
-                        "best_score": float(best_score),
-                        "best_match_type": doc_type,
-                        "best_match_content": doc.page_content[:100] + "..."
-                    })
-                
+
+                    collection_scores.append(
+                        {
+                            "collection_name": collection_name,
+                            "repo_name": repo_name,
+                            "best_score": float(best_score),
+                            "best_match_type": doc_type,
+                            "best_match_content": doc.page_content[:100] + "...",
+                        }
+                    )
+
             except Exception as e:
                 print(f"Error evaluating collection {collection_name}: {e}")
                 continue
-        
+
         # Sort by best score (lower is better for similarity)
         collection_scores.sort(key=lambda x: x["best_score"])
-        
+
         return collection_scores[:max_collections]
-        
+
     except Exception as e:
         print(f"Error ranking collections: {e}")
         return []
 
 
 def search_user_contributions(
-    interview_question: str, collection_name: str, k: int = 10, score_threshold: float = 0.5
+    interview_question: str,
+    collection_name: str,
+    k: int = 10,
+    score_threshold: float = 0.5,
 ) -> VectorSearchResponse:
     """
     Search for relevant user contributions based on an interview question.
@@ -134,16 +139,12 @@ def search_user_contributions(
             persist_directory=CHROMA_DB_PATH,
         )
 
-        # Enhance the query for better retrieval
-        enhanced_query = f"""
-        Interview question: {interview_question}
-        
-        Looking for relevant programming experience, projects, frameworks, and technical concepts 
-        that would demonstrate skills and knowledge related to this question.
-        """
+        # Use the original query directly for better semantic matching
+        # Over-enhancement can dilute the query's semantic meaning
+        search_query = interview_question
 
         # Perform similarity search
-        results = vector_store.similarity_search_with_score(enhanced_query, k=k)
+        results = vector_store.similarity_search_with_score(search_query, k=k)
 
         search_results = []
         for doc, score in results:
@@ -206,38 +207,6 @@ def search_across_all_collections(
     return results
 
 
-def get_collection_info(collection_name: str) -> Optional[Dict]:
-    """Get metadata about a specific collection"""
-    try:
-        vector_store = Chroma(
-            collection_name=collection_name,
-            embedding_function=embeddings,
-            persist_directory=CHROMA_DB_PATH,
-        )
-
-        # Get some sample documents to understand the collection
-        sample_docs = vector_store.similarity_search("", k=3)
-
-        repo_name = None
-        doc_types = set()
-        total_docs = len(sample_docs)  # This is just a sample, not actual count
-
-        for doc in sample_docs:
-            if doc.metadata.get("repo_name"):
-                repo_name = doc.metadata["repo_name"]
-            if doc.metadata.get("type"):
-                doc_types.add(doc.metadata["type"])
-
-        return {
-            "collection_name": collection_name,
-            "repo_name": repo_name,
-            "document_types": list(doc_types),
-            "sample_document_count": total_docs,
-        }
-
-    except Exception as e:
-        print(f"Error getting info for collection {collection_name}: {e}")
-        return None
 
 
 def main():
@@ -254,10 +223,6 @@ def main():
 
     for i, collection in enumerate(collections, 1):
         print(f"   {i}. {collection}")
-        info = get_collection_info(collection)
-        if info:
-            print(f"      - Repo: {info.get('repo_name', 'Unknown')}")
-            print(f"      - Types: {', '.join(info.get('document_types', []))}")
 
     # Demo queries
     demo_queries = [
@@ -275,12 +240,14 @@ def main():
     sample_query = demo_queries[0]
     print(f"\n3. Collections Ranked by Relevance to: '{sample_query}'")
     print("-" * 70)
-    
+
     relevant_collections = list_relevant_collections(sample_query, max_collections=5)
-    
+
     if relevant_collections:
         for i, collection_info in enumerate(relevant_collections, 1):
-            print(f"\n{i}. {collection_info['repo_name']} (Score: {collection_info['best_score']:.4f})")
+            print(
+                f"\n{i}. {collection_info['repo_name']} (Score: {collection_info['best_score']:.4f})"
+            )
             print(f"   Collection: {collection_info['collection_name']}")
             print(f"   Best Match Type: {collection_info['best_match_type']}")
             print(f"   Best Match: {collection_info['best_match_content']}")
@@ -293,7 +260,9 @@ def main():
 
     if relevant_collections:
         top_collection = relevant_collections[0]["collection_name"]
-        results = search_user_contributions(sample_query, top_collection, k=3, score_threshold=0.4)
+        results = search_user_contributions(
+            sample_query, top_collection, k=3, score_threshold=1.0
+        )
 
         print(f"Collection: {results.collection_name}")
         print(f"Total Results: {results.total_results}")
@@ -307,7 +276,9 @@ def main():
     print(f"\n5. Cross-Collection Search Results:")
     print("-" * 70)
 
-    all_results = search_across_all_collections(sample_query, k_per_collection=2, score_threshold=0.4)
+    all_results = search_across_all_collections(
+        sample_query, k_per_collection=2, score_threshold=1.0
+    )
 
     for collection_name, response in all_results.items():
         print(f"\nCollection: {collection_name}")
