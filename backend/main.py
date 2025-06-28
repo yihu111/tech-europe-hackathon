@@ -3,8 +3,8 @@ from pydantic import BaseModel
 from typing import Optional
 import requests
 import os
-from dotenv import load_dotenv
 from base64 import b64decode
+from typing import List
 
 from parsers import detect_frameworks_by_language
 from dependencies_data import LANGUAGE_DEPENDENCY_FILES
@@ -17,11 +17,15 @@ from vector_search import (
 )
 
 load_dotenv()
+from utils.parsers import detect_frameworks_by_language
+from data.dependencies_data import LANGUAGE_DEPENDENCY_FILES
+from core.config import GITHUB_TOKEN
+from clients.supabase_client import supabase
+from models.job import Job
 
 app = FastAPI()
 
 GITHUB_API = "https://api.github.com"
-GITHUB_TOKEN = os.getenv("GITHUB_TOKEN")
 headers = {"Authorization": f"Bearer {GITHUB_TOKEN}"} if GITHUB_TOKEN else {}
 
 def get_all_files(username: str, repo_name: str):
@@ -184,3 +188,28 @@ def get_collection_details(collection_name: str):
         raise HTTPException(status_code=500, detail="Failed to get collection information")
     
     return info
+# --- Save a job ---
+@app.post("/save-job")
+def save_repo_job(job: Job):
+    """
+    Save a single job to Supabase 'savedJobs' table.
+    """
+    try:
+        response = supabase.table("savedJobs").insert(job.dict()).execute()
+        if response.error:
+            raise HTTPException(status_code=500, detail=str(response.error))
+        return {"status": "success", "data": response.data}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+# --- Get all saved jobs ---
+@app.get("/saved-jobs", response_model=List[Job])
+def get_saved_jobs():
+    try:
+        response = supabase.table("savedJobs").select("*").execute()
+        if response.error:
+            raise HTTPException(status_code=500, detail=str(response.error))
+        return response.data
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+    

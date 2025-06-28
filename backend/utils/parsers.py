@@ -1,7 +1,7 @@
 import json
 import re
 
-from frameworks_data import LANGUAGE_FRAMEWORKS
+from data.frameworks_data import LANGUAGE_FRAMEWORKS
 
 def parse_package_json(content: str):
     """
@@ -64,7 +64,6 @@ def detect_frameworks_by_language(languages: dict, dependencies: list[str]) -> l
     """
     found = set()
     deps_lower = [dep.lower() for dep in dependencies]  # normalize once
-    print(deps_lower)
 
     for lang in languages.keys():
         lang_lower = lang.lower()
