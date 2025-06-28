@@ -1,17 +1,25 @@
 import operator
 import os
 import ast
+import hashlib
 from typing import Annotated, List, Dict, Optional
 from typing_extensions import TypedDict
 from pydantic import BaseModel, Field
 from collections import Counter
+from uuid import uuid4
 
-from langchain_openai import ChatOpenAI
+from langchain_openai import ChatOpenAI, OpenAIEmbeddings
 from langgraph.types import Send
 from langgraph.graph import StateGraph, START, END
+from langchain_chroma import Chroma
+from langchain_core.documents import Document
 
-MODEL = "o4-mini"
+MODEL = "gpt-4o-mini"
 llm = ChatOpenAI(model=MODEL)
+embeddings = OpenAIEmbeddings(model="text-embedding-3-small")
+
+# Chroma setup - LangChain way
+CHROMA_DB_PATH = "./chroma_langchain_db"
 
 # Pydantic models for structured output
 class FileAnalysis(BaseModel):
@@ -32,7 +40,8 @@ class RepoAnalysisState(TypedDict):
     files_to_analyze: List[str]
     file_analyses: Annotated[List[Dict], operator.add]  # Collected results from map step
     final_summary: Optional[ConceptSummary]
-    embeddings: List[Dict]
+    chroma_collection: Optional[str]  # Collection name in Chroma
+    stored_documents: int
 
 # Individual file analysis state (sent to each analyze_file_node)
 class FileState(TypedDict):
@@ -146,7 +155,7 @@ async def analyze_file_node(state: FileState) -> Dict:
             "file_analyses": [{
                 "file_path": file_path,
                 "file_type": file_type,
-                "analysis": response.dict(),
+                "analysis": response.model_dump(),
                 "static_frameworks": static_info.get('static_frameworks', [])
             }]
         }
@@ -226,46 +235,139 @@ async def summarize_analysis(state: RepoAnalysisState) -> RepoAnalysisState:
             }
         }
 
-async def generate_embeddings(state: RepoAnalysisState) -> RepoAnalysisState:
-    """Generate embeddings for RAG system (Phase 3)"""
-    # This would integrate with your embedding service
-    # For now, just prepare the data structure
+async def store_in_chroma(state: RepoAnalysisState) -> RepoAnalysisState:
+    """Store all analysis results in Chroma using LangChain integration"""
     
+    repo_path = state["repo_path"]
     final_summary = state["final_summary"]
     file_analyses = state["file_analyses"]
     
-    # Prepare embedding content
-    embedding_docs = []
+    # Create collection name from repo path
+    repo_name = os.path.basename(repo_path.rstrip('/'))
+    collection_name = f"repo_{repo_name}_{hashlib.md5(repo_path.encode()).hexdigest()[:8]}"
     
-    # Add summary-level embeddings
-    if final_summary:
-        embedding_docs.append({
-            "type": "project_summary",
-            "content": f"Tech stack: {', '.join(final_summary.get('tech_stack', []))}. Architecture: {final_summary.get('architecture_overview', '')}",
-            "metadata": {"level": "project", "type": "overview"}
-        })
+    print(f"Storing in Chroma collection: {collection_name}")
+    
+    try:
+        # Create Chroma vector store with LangChain
+        vector_store = Chroma(
+            collection_name=collection_name,
+            embedding_function=embeddings,
+            persist_directory=CHROMA_DB_PATH,
+        )
         
-        # Add concept embeddings
-        for concept in final_summary.get('key_concepts', []):
-            embedding_docs.append({
-                "type": "concept",
-                "content": f"Project uses concept: {concept.get('concept', concept)}",
-                "metadata": {"level": "concept", "frequency": concept.get('count', 1)}
-            })
-    
-    # Add file-level embeddings
-    for analysis in file_analyses:
-        if "analysis" in analysis:
-            file_purpose = analysis["analysis"].get("file_purpose", "")
-            frameworks = analysis["analysis"].get("frameworks", [])
+        # Prepare LangChain Documents
+        documents = []
+        document_ids = []
+        
+        # 1. Store project-level summary
+        if final_summary:
+            summary_text = f"""
+            Project: {repo_name}
+            Tech Stack: {', '.join(final_summary.get('tech_stack', []))}
+            Architecture: {final_summary.get('architecture_overview', '')}
+            Top Frameworks: {', '.join([fw.get('name', str(fw)) for fw in final_summary.get('top_frameworks', [])[:5]])}
+            Key Concepts: {', '.join([c.get('concept', str(c)) for c in final_summary.get('key_concepts', [])[:10]])}
+            """
             
-            embedding_docs.append({
-                "type": "file_analysis", 
-                "content": f"File {os.path.basename(analysis['file_path'])}: {file_purpose}. Uses: {', '.join(frameworks)}",
-                "metadata": {"file_path": analysis["file_path"], "level": "file"}
-            })
-    
-    return {**state, "embeddings": embedding_docs}
+            summary_doc = Document(
+                page_content=summary_text.strip(),
+                metadata={
+                    "type": "project_summary",
+                    "repo_name": repo_name,
+                    "repo_path": repo_path,
+                    "level": "project"
+                }
+            )
+            
+            documents.append(summary_doc)
+            document_ids.append(f"{collection_name}_summary")
+        
+        # 2. Store individual file analyses
+        for i, analysis in enumerate(file_analyses):
+            if "analysis" in analysis:
+                file_path = analysis["file_path"]
+                file_analysis = analysis["analysis"]
+                
+                # Create rich document text
+                file_doc_text = f"""
+                File: {os.path.relpath(file_path, repo_path)}
+                Purpose: {file_analysis.get('file_purpose', '')}
+                Frameworks: {', '.join(file_analysis.get('frameworks', []))}
+                Concepts: {', '.join(file_analysis.get('concepts', []))}
+                Architecture Patterns: {', '.join(file_analysis.get('architecture_patterns', []))}
+                File Type: {analysis.get('file_type', '')}
+                """
+                
+                file_doc = Document(
+                    page_content=file_doc_text.strip(),
+                    metadata={
+                        "type": "file_analysis",
+                        "file_path": file_path,
+                        "file_name": os.path.basename(file_path),
+                        "file_type": analysis.get('file_type', ''),
+                        "repo_name": repo_name,
+                        "repo_path": repo_path,
+                        "level": "file",
+                        # Convert lists to strings for Chroma compatibility
+                        "frameworks": ', '.join(file_analysis.get('frameworks', [])),
+                        "concepts": ', '.join(file_analysis.get('concepts', []))
+                    }
+                )
+                
+                documents.append(file_doc)
+                document_ids.append(f"{collection_name}_file_{i}")
+        
+        # 3. Store concept-level documents for better retrieval
+        if final_summary:
+            for j, concept in enumerate(final_summary.get('key_concepts', [])):
+                concept_name = concept.get('concept', str(concept))
+                concept_count = concept.get('count', 1)
+                
+                concept_doc_text = f"""
+                Concept: {concept_name}
+                Used in {concept_count} files across the {repo_name} project.
+                This concept is part of the project's core functionality and technical implementation.
+                """
+                
+                concept_doc = Document(
+                    page_content=concept_doc_text.strip(),
+                    metadata={
+                        "type": "concept",
+                        "concept": concept_name,
+                        "frequency": concept_count,
+                        "repo_name": repo_name,
+                        "repo_path": repo_path,
+                        "level": "concept"
+                    }
+                )
+                
+                documents.append(concept_doc)
+                document_ids.append(f"{collection_name}_concept_{j}")
+        
+        # Store in Chroma using LangChain's add_documents
+        if documents:
+            vector_store.add_documents(
+                documents=documents,
+                ids=document_ids
+            )
+            
+            print(f"✅ Stored {len(documents)} documents in Chroma")
+            print(f"   - Project summary: 1")
+            print(f"   - File analyses: {len(file_analyses)}")
+            print(f"   - Concept documents: {len(documents) - len(file_analyses) - 1}")
+            print(f"   - Collection: {collection_name}")
+            print(f"   - Persist directory: {CHROMA_DB_PATH}")
+        
+        return {
+            **state, 
+            "chroma_collection": collection_name,
+            "stored_documents": len(documents)
+        }
+        
+    except Exception as e:
+        print(f"❌ Failed to store in Chroma: {e}")
+        return {**state, "chroma_collection": None, "stored_documents": 0}
 
 # Mapping function for Send API
 def continue_to_file_analysis(state: RepoAnalysisState):
@@ -301,7 +403,7 @@ def create_repo_analysis_graph():
     graph.add_node("discover_files", discover_files)
     graph.add_node("analyze_file", analyze_file_node)  # Gets called multiple times via Send
     graph.add_node("summarize_analysis", summarize_analysis)
-    graph.add_node("generate_embeddings", generate_embeddings)
+    graph.add_node("store_in_chroma", store_in_chroma)
     
     # Add edges
     graph.add_edge(START, "discover_files")
@@ -315,8 +417,8 @@ def create_repo_analysis_graph():
     
     # Reduce step: All analyze_file nodes flow to summary
     graph.add_edge("analyze_file", "summarize_analysis")
-    graph.add_edge("summarize_analysis", "generate_embeddings")
-    graph.add_edge("generate_embeddings", END)
+    graph.add_edge("summarize_analysis", "store_in_chroma")
+    graph.add_edge("store_in_chroma", END)
     
     return graph.compile()
 
@@ -336,7 +438,8 @@ async def analyze_repo(repo_path: str):
         "files_to_analyze": [],
         "file_analyses": [],
         "final_summary": None,
-        "embeddings": []
+        "chroma_collection": None,
+        "stored_documents": 0
     }
     
     print(f"Starting repo analysis for: {repo_path}")
@@ -358,7 +461,8 @@ async def analyze_repo(repo_path: str):
         for concept in final_summary.get('key_concepts', [])[:8]:
             print(f"  • {concept.get('concept', concept)}")
         
-        print(f"\n🔍 Generated {len(result['embeddings'])} embeddings for RAG system")
+        print(f"\n💾 Stored in Chroma collection: {result.get('chroma_collection', 'N/A')}")
+        print(f"📄 Documents stored: {result.get('stored_documents', 0)}")
     
     return result
 
@@ -367,7 +471,7 @@ if __name__ == "__main__":
     import asyncio
     
     # Test with current directory or specify a repo path
-    repo_path = "/Users/william/repos/mock_project"  # Change this!
+    repo_path = os.getenv("TEST_REPO_PATH")  # Change this!
     # repo_path = "."  # Current directory
     
     asyncio.run(analyze_repo(repo_path))
