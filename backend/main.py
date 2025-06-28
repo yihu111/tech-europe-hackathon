@@ -165,10 +165,12 @@ async def overview(request: SearchRequest):
    
 
 
-#from jobsearch.job_search_agent import run_job_search
+class JobSearchRequest(BaseModel):
+    languages: dict
+    frameworks: list[str]
 
 @app.post("/jobsearch")
-async def jobSearch(request: SearchRequest):
+async def jobSearch(request: JobSearchRequest):
     """
     Run job search using stored tech stack keywords.
     """
