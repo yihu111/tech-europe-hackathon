@@ -46,11 +46,12 @@ class ConceptSummary(BaseModel):
 class RepoAnalysisState(TypedDict):
     username: str
     repo_name: str
-    repo_files: List[Dict]  # List of file info from GitHub API
-    file_analyses: Annotated[List[Dict], operator.add]  # Collected results from map step
+    repo_files: List[Dict]
+    file_analyses: Annotated[List[Dict], operator.add]
     final_summary: Optional[ConceptSummary]
-    chroma_collection: Optional[str]  # Collection name in Chroma
+    chroma_collection: Optional[str]
     stored_documents: int
+    job_search_file: Optional[str]
 
 # Individual file analysis state (sent to each analyze_file_node)
 class FileState(TypedDict):
@@ -467,6 +468,77 @@ async def store_in_chroma(state: RepoAnalysisState) -> RepoAnalysisState:
         print(f"❌ Failed to store in Chroma: {e}")
         return {**state, "chroma_collection": None, "stored_documents": 0}
 
+
+
+def save_job_search_overview(state: RepoAnalysisState) -> RepoAnalysisState:
+    """Save a job search overview to text file for Tavily"""
+    
+    username = state["username"]
+    repo_name = state["repo_name"]
+    final_summary = state["final_summary"]
+    file_analyses = state["file_analyses"]
+    
+    if not final_summary:
+        print("No summary available to save")
+        return state
+    
+    # Create job search description
+    tech_stack = final_summary.get('tech_stack', [])[:8]  # Top 8 technologies
+    top_frameworks = final_summary.get('top_frameworks', [])[:6]  # Top 6 frameworks
+    key_concepts = final_summary.get('key_concepts', [])[:10]  # Top 10 concepts
+    
+    # Build experience context
+    total_files = len(file_analyses)
+    framework_experience = []
+    for fw in top_frameworks:
+        name = fw.get('name', str(fw))
+        count = fw.get('count', 1)
+        if count >= 5:
+            exp_level = "extensive experience"
+        elif count >= 3:
+            exp_level = "solid experience"
+        else:
+            exp_level = "some experience"
+        framework_experience.append(f"{name} ({exp_level})")
+    
+    # Create comprehensive job search overview
+    overview = f"""Software Developer with expertise in {', '.join(tech_stack[:3])} looking for opportunities.
+
+TECHNICAL SKILLS:
+{', '.join(tech_stack)}
+
+FRAMEWORK EXPERIENCE:
+{', '.join(framework_experience)}
+
+KEY CAPABILITIES:
+{', '.join([c.get('concept', str(c)) for c in key_concepts[:6]])}
+
+PROJECT BACKGROUND:
+Analyzed repository: {username}/{repo_name} containing {total_files} files. 
+Architecture: {final_summary.get('architecture_overview', 'Modern software architecture with focus on scalable solutions.')}
+
+EXPERIENCE LEVEL:
+Demonstrated practical experience across {len(tech_stack)} technologies with hands-on implementation in real projects.
+
+IDEAL ROLES:
+Software Engineer, Full Stack Developer, Backend Developer, Frontend Developer roles involving {', '.join(tech_stack[:4])}"""
+
+    # Save to file
+    filename = f"job_search_overview_{username}.txt"
+    try:
+        with open(filename, 'w', encoding='utf-8') as f:
+            f.write(overview)
+        
+        print(f"📄 Job search overview saved to: {filename}")
+        
+        return {**state, "job_search_file": filename}
+        
+    except Exception as e:
+        print(f"❌ Failed to save job search overview: {e}")
+        return {**state, "job_search_file": None}
+
+
+
 # Mapping function for Send API
 def continue_to_file_analysis(state: RepoAnalysisState):
     """Map discovered files to parallel analysis tasks"""
@@ -513,6 +585,7 @@ def create_repo_analysis_graph():
     graph.add_node("analyze_file", analyze_file_node)  # Gets called multiple times via Send
     graph.add_node("summarize_analysis", summarize_analysis)
     graph.add_node("store_in_chroma", store_in_chroma)
+    graph.add_node("save_job_search_overview", save_job_search_overview)
     
     # Add edges
     graph.add_edge(START, "discover_files")
@@ -527,7 +600,8 @@ def create_repo_analysis_graph():
     # Reduce step: All analyze_file nodes flow to summary
     graph.add_edge("analyze_file", "summarize_analysis")
     graph.add_edge("summarize_analysis", "store_in_chroma")
-    graph.add_edge("store_in_chroma", END)
+    graph.add_edge("store_in_chroma", "save_job_search_overview") 
+    graph.add_edge("save_job_search_overview", END)
     
     return graph.compile()
 
