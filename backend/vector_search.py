@@ -181,7 +181,7 @@ def search_user_contributions(
 
 def search_across_all_relevant_collections(
     interview_question: str, k_per_collection: int = 5, score_threshold: float = 0.5
-) -> Dict[str, VectorSearchResponse]:
+) -> List[SearchResult]:
     """
     Search across all available collections for relevant contributions.
 
@@ -191,10 +191,10 @@ def search_across_all_relevant_collections(
         score_threshold: Maximum similarity score to include (lower = more similar)
 
     Returns:
-        Dictionary mapping collection names to search responses
+        Flattened list of SearchResult objects ordered by relevance
     """
     collections = list_relevant_collections(interview_question)
-    results = {}
+    all_results = []
 
     for collection_info in collections:
         collection_name = collection_info["collection_name"]
@@ -203,12 +203,15 @@ def search_across_all_relevant_collections(
                 interview_question, collection_name, k_per_collection, score_threshold
             )
             if search_response.total_results > 0:
-                results[collection_name] = search_response
+                all_results.extend(search_response.results)
         except Exception as e:
             print(f"Error searching collection {collection_name}: {e}")
             continue
 
-    return results
+    # Sort all results by score (lower is better)
+    all_results.sort(key=lambda x: x.score)
+
+    return all_results
 
 
 def main():
@@ -234,59 +237,12 @@ def main():
         "What experience is there with databases and data storage?",
     ]
 
-    print(f"\n2. Demo Queries:")
-    for i, query in enumerate(demo_queries, 1):
-        print(f"   {i}. {query}")
-
-    # Demo relevant collections ranking
-    sample_query = demo_queries[0]
-    print(f"\n3. Collections Ranked by Relevance to: '{sample_query}'")
-    print("-" * 70)
-
-    relevant_collections = list_relevant_collections(sample_query, max_collections=5)
-
-    if relevant_collections:
-        for i, collection_info in enumerate(relevant_collections, 1):
-            print(
-                f"\n{i}. {collection_info['repo_name']} (Score: {collection_info['best_score']:.4f})"
-            )
-            print(f"   Collection: {collection_info['collection_name']}")
-            print(f"   Best Match Type: {collection_info['best_match_type']}")
-            print(f"   Best Match: {collection_info['best_match_content']}")
-    else:
-        print("No relevant collections found.")
-
-    # Run a sample search on the most relevant collection
-    print(f"\n4. Detailed Search in Most Relevant Collection:")
-    print("-" * 70)
-
-    if relevant_collections:
-        top_collection = relevant_collections[0]["collection_name"]
-        results = search_user_contributions(
-            sample_query, top_collection, k=3, score_threshold=1.0
-        )
-
-        print(f"Collection: {results.collection_name}")
-        print(f"Total Results: {results.total_results}")
-
-        for i, result in enumerate(results.results, 1):
-            print(f"\nResult {i} (Score: {result.score:.4f}):")
-            print(f"Type: {result.type}")
-            print(f"Content: {result.content[:200]}...")
-
-    # Demo cross-collection search
-    print(f"\n5. Cross-Collection Search Results:")
-    print("-" * 70)
-
     all_results = search_across_all_relevant_collections(
-        sample_query, k_per_collection=2, score_threshold=1.0
+        demo_queries[0], k_per_collection=2, score_threshold=1.0
     )
 
-    for collection_name, response in all_results.items():
-        print(f"\nCollection: {collection_name}")
-        print(f"Results: {response.total_results}")
-        for result in response.results:
-            print(f"  - {result.type}: {result.content[:100]}...")
+    for result in all_results:
+        print(f"  - {result.type}: {result.content}")
 
 
 if __name__ == "__main__":
