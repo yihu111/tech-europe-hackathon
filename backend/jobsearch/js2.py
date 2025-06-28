@@ -22,7 +22,7 @@ from job_search_agent_prompt import (
 
 load_dotenv()
 
-MODEL = "o4-mini"
+MODEL = "gpt-4o"
 PROVIDER = "openai"
 
 
@@ -60,11 +60,11 @@ def create_tavily_tool():
 
 # Helper to read user parameters from list.txt
 def read_search_config() -> str:
-    """Read raw search parameters from list.txt"""
-    config_path = Path(__file__).parent / "list.txt"
-    if not config_path.exists():
-        raise FileNotFoundError(f"Search configuration file not found: {config_path}")
-    return config_path.read_text().strip()
+   """Read raw search parameters from job_search_overview_w-foster.txt"""
+   config_path = Path(__file__).parent.parent / "job_search_overview_w-foster.txt"
+   if not config_path.exists():
+       raise FileNotFoundError(f"Search configuration file not found: {config_path}")
+   return config_path.read_text().strip()
 
 
 # Create the specialized agents
