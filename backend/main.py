@@ -21,6 +21,7 @@ from core.config import GITHUB_TOKEN
 from models.job import Job
 
 from jobsearch.job_search_agent import search_tech_jobs
+from jobsearch.job_search import run_job_search
 
 app = FastAPI()
 
@@ -173,7 +174,7 @@ async def jobSearch(request: SearchRequest):
     """
     try:
         # Call your job search function - returns list of dicts with "description" and "url"
-        #jobs = await run_job_search()
+        jobs = await run_job_search(request.languages, request.frameworks)
         # [{"description": <job desc>, "url": <job page url}, {"description": <job desc>, "url": <job page url}. {"description": <job desc>, "url": <job page url},]
         
         return jobs
