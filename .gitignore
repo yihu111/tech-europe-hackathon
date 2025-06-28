@@ -208,3 +208,5 @@ __marimo__/
 
 
 backend/chroma_langchain_db
+*/chroma_langchain_db/*
+
