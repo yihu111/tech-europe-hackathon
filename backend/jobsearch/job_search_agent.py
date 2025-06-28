@@ -11,7 +11,7 @@ from langchain_core.tools import tool
 from pydantic import BaseModel
 from datetime import datetime
 from dotenv import load_dotenv
-from job_search_agent_prompt import supervisor_prompt, job_analyzer_prompt, job_searcher_prompt, result_formatter_prompt
+from jobsearch.job_search_agent_prompt import supervisor_prompt, job_analyzer_prompt, job_searcher_prompt, result_formatter_prompt
 
 load_dotenv()
 os.getenv("TAVILY_API_KEY")

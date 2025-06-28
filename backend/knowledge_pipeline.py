@@ -16,7 +16,7 @@ from langgraph.graph import StateGraph, START, END
 from langchain_chroma import Chroma
 from langchain_core.documents import Document
 
-MODEL = "gpt-4o-mini"
+MODEL = "o4-mini"
 llm = ChatOpenAI(model=MODEL)
 embeddings = OpenAIEmbeddings(model="text-embedding-3-small")
 

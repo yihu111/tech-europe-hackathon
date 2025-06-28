@@ -1,13 +1,13 @@
-Software Developer with expertise in GitHub Actions, actions/checkout, actions/setup-node looking for opportunities.
+Software Developer with expertise in GitHub Actions, actions/checkout@v3, actions/setup-python@v4 looking for opportunities.
 
 TECHNICAL SKILLS:
-GitHub Actions, actions/checkout, actions/setup-node, FastAPI, React.js, LangGraph, Instaloader, glob
+GitHub Actions, actions/checkout@v3, actions/setup-python@v4, Python, pip, Node.js, npm, LangGraph
 
 FRAMEWORK EXPERIENCE:
-React (extensive experience), @ (extensive experience), react (extensive experience), lucide-react (extensive experience), @radix-ui (extensive experience), Radix UI (extensive experience)
+React (extensive experience), @ (extensive experience), react (extensive experience), lucide-react (extensive experience), @radix-ui (extensive experience), TypeScript (extensive experience)
 
 KEY CAPABILITIES:
-Component Composition, Forward Ref, Asynchronous programming, Conditional Rendering, Forward Refs, Context API
+React.forwardRef for ref forwarding, Forwarding refs with React.forwardRef, Ref forwarding via React.forwardRef, forwardRef for ref forwarding, Compound component pattern, Component-based UI
 
 PROJECT BACKGROUND:
 Analyzed repository: w-foster/instagram-mcp-hackathon containing 392 files. 
@@ -17,4 +17,4 @@ EXPERIENCE LEVEL:
 Demonstrated practical experience across 8 technologies with hands-on implementation in real projects.
 
 IDEAL ROLES:
-Software Engineer, Full Stack Developer, Backend Developer, Frontend Developer roles involving GitHub Actions, actions/checkout, actions/setup-node, FastAPI
+Software Engineer, Full Stack Developer, Backend Developer, Frontend Developer roles involving GitHub Actions, actions/checkout@v3, actions/setup-python@v4, Python
