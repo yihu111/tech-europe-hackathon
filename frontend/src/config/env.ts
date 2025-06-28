@@ -7,6 +7,6 @@ export const API_BASE_URL = isDevelopment
 
 export const ENDPOINTS = {
   DEFAULT: `${API_BASE_URL}/`,
-  SEARCH: `${API_BASE_URL}/search`,
-  GITHUB: `${API_BASE_URL}/repos/`,
+  OVERVIEW: `${API_BASE_URL}/overview`,
+  JOBSEARCH: `${API_BASE_URL}/jobsearch`,
 } as const;

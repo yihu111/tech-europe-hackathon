@@ -7,6 +7,7 @@ from base64 import b64decode
 from typing import List
 import json
 from pathlib import Path
+from fastapi.middleware.cors import CORSMiddleware
 
 from vector_search import (
     list_available_collections, 
@@ -24,6 +25,14 @@ from models.job import Job
 from jobsearch.job_search_agent import search_tech_jobs
 
 app = FastAPI()
+
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],  # Or restrict to your frontend origin, e.g. ["http://localhost:3000"]
+    allow_credentials=True,
+    allow_methods=["*"],  # Allow all HTTP methods including OPTIONS, POST, GET, etc.
+    allow_headers=["*"],
+)
 
 GITHUB_API = "https://api.github.com"
 headers = {"Authorization": f"Bearer {GITHUB_TOKEN}"} if GITHUB_TOKEN else {}
