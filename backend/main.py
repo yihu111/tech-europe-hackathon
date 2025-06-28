@@ -113,43 +113,50 @@ from pydantic import BaseModel
 class SearchRequest(BaseModel):
    username: str
 
+
+
+from pipeline.knowledge_pipeline import analyze_github_user
+
 @app.post("/overview")
 async def overview(request: SearchRequest):
-   """
-   Analyze GitHub user's repos and extract knowledge for job search.
-   """
-   try:
-       # Call your knowledge pipeline with the username
-       result = await knowledge_pipeline(request.username)
-       
-       return {
-           "status": "success",
-           "username": request.username,
-           "message": "Knowledge extraction completed",
-           "result": result
-       }
-       
-   except Exception as e:
-       raise HTTPException(status_code=500, detail=str(e))
+    """
+    Analyze GitHub user's repos and extract knowledge for job search.
+    """
+    try:
+        # Call your knowledge pipeline with the username
+        result = await analyze_github_user(request.username)
+        
+        return {
+            "status": "success",
+            "username": request.username,
+            "message": "Knowledge extraction completed"
+        }
+        
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
    
+
+
+from jobsearch.job_search_agent import run_job_search
+
+from jobsearch.job_search_agent import run_job_search
+
 @app.post("/jobsearch")
 async def jobSearch(request: SearchRequest):
-   """
-   Analyze GitHub user's repos and extract knowledge for job search.
-   """
-   try:
-       # Call your knowledge pipeline with the username
-       result = await knowledge_pipeline(request.username)
-       
-       return {
-           "status": "success",
-           "username": request.username,
-           "message": "Knowledge extraction completed",
-           "result": result
-       }
-       
-   except Exception as e:
-       raise HTTPException(status_code=500, detail=str(e))
+    """
+    Run job search using stored tech stack keywords.
+    """
+    try:
+        # Call your job search function - returns list of dicts with "description" and "url"
+        jobs = await run_job_search()
+        # [{"description": <job desc>, "url": <job page url}, {"description": <job desc>, "url": <job page url}. {"description": <job desc>, "url": <job page url},]
+        
+        return jobs
+        
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+    
+
 
 
 @app.post("/start-job-search")
