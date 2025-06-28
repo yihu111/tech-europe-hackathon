@@ -165,19 +165,22 @@ async def overview(request: SearchRequest):
    
 
 
+from jobsearch.js2 import test_job_search
+
 class JobSearchRequest(BaseModel):
     languages: dict
     frameworks: list[str]
 
 @app.post("/jobsearch")
-async def jobSearch(request: JobSearchRequest):
+async def jobSearch(request: SearchRequest):
     """
     Run job search using stored tech stack keywords.
     """
     try:
-        # Call your job search function - returns list of dicts with "description" and "url"
-        jobs = await run_job_search(request.languages, request.frameworks)
-        # [{"description": <job desc>, "url": <job page url}, {"description": <job desc>, "url": <job page url}. {"description": <job desc>, "url": <job page url},]
+        # Import your job search function
+        
+        # Call your job search function - returns list of dicts
+        jobs = await test_job_search()
         
         return jobs
         
