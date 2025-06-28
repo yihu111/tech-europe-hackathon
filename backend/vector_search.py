@@ -3,6 +3,9 @@ from typing import List, Dict, Optional
 from pydantic import BaseModel
 from langchain_chroma import Chroma
 from langchain_openai import OpenAIEmbeddings
+from dotenv import load_dotenv
+
+load_dotenv()
 
 # Match the setup from knowledge_pipeline.py
 CHROMA_DB_PATH = "./chroma_langchain_db"

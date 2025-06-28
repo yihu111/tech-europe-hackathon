@@ -6,6 +6,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { ExternalLink } from "lucide-react";
 import { Job } from "@/types";
 import { useToast } from "@/hooks/use-toast";
+import { ENDPOINTS } from "@/config/env";
 
 interface JobSearchProps {
   onStartInterview: (job: Job) => void;
@@ -35,7 +36,7 @@ const JobSearch = ({ onStartInterview }: JobSearchProps) => {
 
     setLoading(true);
     try {
-      const response = await fetch("http://127.0.0.1:8000/search", {
+      const response = await fetch(ENDPOINTS.SEARCH, {
         method: "POST",
         headers: {
           "Content-Type": "application/json",

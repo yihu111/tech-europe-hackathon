@@ -104,8 +104,27 @@ from pydantic import BaseModel
 class SearchRequest(BaseModel):
    username: str
 
-@app.post("/search")
-async def search(request: SearchRequest):
+@app.post("/overview")
+async def overview(request: SearchRequest):
+   """
+   Analyze GitHub user's repos and extract knowledge for job search.
+   """
+   try:
+       # Call your knowledge pipeline with the username
+       result = await knowledge_pipeline(request.username)
+       
+       return {
+           "status": "success",
+           "username": request.username,
+           "message": "Knowledge extraction completed",
+           "result": result
+       }
+       
+   except Exception as e:
+       raise HTTPException(status_code=500, detail=str(e))
+   
+@app.post("/jobsearch")
+async def jobSearch(request: SearchRequest):
    """
    Analyze GitHub user's repos and extract knowledge for job search.
    """
