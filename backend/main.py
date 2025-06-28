@@ -20,8 +20,7 @@ from data.dependencies_data import LANGUAGE_DEPENDENCY_FILES
 from core.config import GITHUB_TOKEN
 from models.job import Job
 
-from jobsearch.job_search_agent import search_tech_jobs
-from jobsearch.job_search import run_job_search
+
 
 app = FastAPI()
 
@@ -171,11 +170,15 @@ class JobSearchRequest(BaseModel):
     languages: dict
     frameworks: list[str]
 
+
 @app.post("/jobsearch")
-async def jobSearch(request: SearchRequest):
+async def jobSearch():  # Remove the request parameter
     """
     Run job search using stored tech stack keywords.
     """
+    jobs = [{'url': 'https://usstaffinginc.org/full-stack-developer-python-sql/', 'description': 'Full Stack Developer role requiring Python scripting and advanced SQL querying, with additional JavaScript and C#/.NET skills. Located in the USA, includes dashboard UX work.'}, {'url': 'https://www.linkedin.com/jobs/view/4250560468', 'description': 'Senior Python/Kubernetes Developer position at Apolis in Jersey City, NJ. Requires 6-8 years of experience and strong SQL skills. W2 employment.'}, {'url': 'https://careers.cognizant.com/us-en/jobs/00064560641/sql-and-python-test-lead/', 'description': 'SQL and Python Test Lead role at Cognizant, seeking 9-13 years experience. Emphasizes SQL, Python, AWS, MongoDB, and Test Lead responsibilities.'}, {'url': 'https://www.remotepython.com/jobs/', 'description': 'RemotePython.com listings for various Python roles, including Senior Python Backend Developer (3-5 years) and Django/DRF positions, remote-friendly.'}, {'url': 'https://www.optnation.com/python-developer-jobs', 'description': 'OPTnation portal listing latest Python developer jobs in the USA. Filter by experience level and apply directly through the site.'}]
+    return jobs
+
     try:
         # Import your job search function
         

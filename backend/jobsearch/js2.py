@@ -14,7 +14,7 @@ from pydantic import BaseModel
 from datetime import datetime
 from dotenv import load_dotenv
 from langchain_tavily import TavilySearch
-from job_search_agent_prompt import (
+from jobsearch.job_search_agent_prompt import (
     supervisor_prompt,
     job_analyzer_prompt,
     job_searcher_prompt
