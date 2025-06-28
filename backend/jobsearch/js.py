@@ -96,7 +96,6 @@ async def create_job_search_supervisor():
         add_handoff_back_messages=False,
         output_mode="last_message",
     ).compile()
-
 async def search_tech_jobs() -> Union[List[Dict[str, Any]], None]:
     """Main function to search for tech jobs and return JSON results"""
     try:
@@ -116,20 +115,42 @@ async def search_tech_jobs() -> Union[List[Dict[str, Any]], None]:
         print(f"Error during job search: {e}")
         return None
 
-    # result may be a JSON string or already a dict/list
-    if isinstance(result, (dict, list)):
-        jobs = result
+    # Extract content from the message object
+    if hasattr(result, 'content'):
+        # result is a message object, get the content
+        content = result.content
+    elif isinstance(result, dict) and 'messages' in result:
+        # result is state dict, get last message content
+        last_message = result['messages'][-1]
+        content = last_message.content if hasattr(last_message, 'content') else str(last_message)
     else:
-        try:
-            jobs = json.loads(result)
-        except Exception:
-            print("Error: Received invalid JSON from supervisor:")
-            print(result)
-            return None
+        print(f"Unexpected result type: {type(result)}")
+        return None
 
-    # Pretty-print output
-    print(json.dumps(jobs, indent=2))
-    return jobs
+    # Parse the content as JSON
+    try:
+        jobs = json.loads(content)
+    except json.JSONDecodeError as e:
+        print(f"Error parsing JSON from supervisor output: {e}")
+        print(f"Raw content: {content}")
+        return None
+
+    # Transform to your desired format: List[{"description": str, "url": str}]
+    if isinstance(jobs, list):
+        formatted_jobs = []
+        for job in jobs:
+            if isinstance(job, dict):
+                # Extract description and url from whatever format your agents return
+                description = job.get('description', job.get('title', 'No description'))
+                url = job.get('url', job.get('link', ''))
+                formatted_jobs.append({"description": description, "url": url})
+        
+        print(json.dumps(formatted_jobs, indent=2))
+        return formatted_jobs
+    
+    return None
+
+
 
 # CLI entry point
 def main():
