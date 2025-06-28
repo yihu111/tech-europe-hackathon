@@ -5,6 +5,8 @@ import requests
 import os
 from base64 import b64decode
 from typing import List
+import json
+from pathlib import Path
 
 from parsers import detect_frameworks_by_language
 from dependencies_data import LANGUAGE_DEPENDENCY_FILES
@@ -22,6 +24,8 @@ from data.dependencies_data import LANGUAGE_DEPENDENCY_FILES
 from core.config import GITHUB_TOKEN
 from clients.supabase_client import supabase
 from models.job import Job
+
+from jobsearch.job_search_agent import search_tech_jobs
 
 app = FastAPI()
 
@@ -90,6 +94,69 @@ def get_repos_and_data(username: str):
         })
 
     return result
+
+
+
+
+
+
+# =======================
+
+
+from pydantic import BaseModel
+
+class SearchRequest(BaseModel):
+   username: str
+
+@app.post("/search")
+async def search(request: SearchRequest):
+   """
+   Analyze GitHub user's repos and extract knowledge for job search.
+   """
+   try:
+       # Call your knowledge pipeline with the username
+       result = await knowledge_pipeline(request.username)
+       
+       return {
+           "status": "success",
+           "username": request.username,
+           "message": "Knowledge extraction completed",
+           "result": result
+       }
+       
+   except Exception as e:
+       raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.post("/start-job-search")
+async def start_job_search():
+   """
+   Start job search using stored tech stack keywords.
+   """
+   try:
+       tech_stack_file_path = "user_tech_stack.json"  # Path to the stored keywords
+       
+       # Call your job search function with file path
+       jobs = await search_tech_jobs(
+           tech_stack_file_path=tech_stack_file_path,
+           location="remote",
+           experience_level="senior"
+       )
+       
+       return {
+           "status": "success",
+           "jobs": jobs
+       }
+       
+   except Exception as e:
+       raise HTTPException(status_code=500, detail=str(e))
+
+
+
+
+
+
+
 
 # Pydantic models for vector search requests
 class SearchRequest(BaseModel):

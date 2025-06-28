@@ -1,7 +1,10 @@
+        
 import operator
 import os
 import ast
 import hashlib
+import requests
+import base64
 from typing import Annotated, List, Dict, Optional
 from typing_extensions import TypedDict
 from pydantic import BaseModel, Field
@@ -21,6 +24,11 @@ embeddings = OpenAIEmbeddings(model="text-embedding-3-small")
 # Chroma setup - LangChain way
 CHROMA_DB_PATH = "./chroma_langchain_db"
 
+# GitHub API setup
+GITHUB_API = "https://api.github.com"
+GITHUB_TOKEN = os.getenv("GITHUB_TOKEN")
+headers = {"Authorization": f"Bearer {GITHUB_TOKEN}"} if GITHUB_TOKEN else {}
+
 # Pydantic models for structured output
 class FileAnalysis(BaseModel):
     frameworks: List[str] = Field(description="List of frameworks/libraries detected")
@@ -36,8 +44,9 @@ class ConceptSummary(BaseModel):
 
 # Overall repo analysis state
 class RepoAnalysisState(TypedDict):
-    repo_path: str
-    files_to_analyze: List[str]
+    username: str
+    repo_name: str
+    repo_files: List[Dict]  # List of file info from GitHub API
     file_analyses: Annotated[List[Dict], operator.add]  # Collected results from map step
     final_summary: Optional[ConceptSummary]
     chroma_collection: Optional[str]  # Collection name in Chroma
@@ -45,15 +54,25 @@ class RepoAnalysisState(TypedDict):
 
 # Individual file analysis state (sent to each analyze_file_node)
 class FileState(TypedDict):
+    username: str
+    repo_name: str
     file_path: str
     file_content: str
     file_type: str
 
 # NODE FUNCTIONS
 
-def discover_files(state: RepoAnalysisState) -> RepoAnalysisState:
-    """Find all relevant code files in the repo"""
-    repo_path = state["repo_path"]
+def get_repo_files(username: str, repo_name: str) -> List[Dict]:
+    """Get all files from GitHub repo using API"""
+    url = f"{GITHUB_API}/repos/{username}/{repo_name}/git/trees/HEAD?recursive=1"
+    response = requests.get(url, headers=headers)
+    
+    if response.status_code != 200:
+        print(f"Failed to fetch repo files: {response.status_code}")
+        return []
+    
+    data = response.json()
+    files = []
     
     # File extensions we care about
     relevant_extensions = {
@@ -63,24 +82,101 @@ def discover_files(state: RepoAnalysisState) -> RepoAnalysisState:
     }
     
     # Directories to ignore
-    ignore_dirs = {
-        'node_modules', '.git', '__pycache__', '.venv', 'venv', 'env',
-        'build', 'dist', '.next', 'target', 'vendor', '.pytest_cache'
-    }
+    ignore_patterns = [
+        'node_modules/', '.git/', '__pycache__/', '.venv/', 'venv/', 'env/',
+        'build/', 'dist/', '.next/', 'target/', 'vendor/', '.pytest_cache/'
+    ]
     
-    files_to_analyze = []
+    for item in data.get('tree', []):
+        if item['type'] == 'blob':  # It's a file
+            file_path = item['path']
+            
+            # Skip ignored directories
+            if any(ignore in file_path for ignore in ignore_patterns):
+                continue
+                
+            # Check if it's a relevant file type
+            if any(file_path.endswith(ext) for ext in relevant_extensions):
+                files.append({
+                    'path': file_path,
+                    'url': item['url'],
+                    'size': item.get('size', 0)
+                })
     
-    for root, dirs, files in os.walk(repo_path):
-        # Remove ignored directories from traversal
-        dirs[:] = [d for d in dirs if d not in ignore_dirs]
+    return files
+
+def get_file_content(username: str, repo_name: str, file_path: str) -> str:
+    """Get content of a specific file from GitHub"""
+    url = f"{GITHUB_API}/repos/{username}/{repo_name}/contents/{file_path}"
+    response = requests.get(url, headers=headers)
+    
+    if response.status_code != 200:
+        print(f"Failed to fetch file {file_path}: {response.status_code}")
+        return ""
+    
+    data = response.json()
+    content = data.get('content', '')
+    
+    if content:
+        try:
+            # Decode base64 content
+            decoded = base64.b64decode(content).decode('utf-8')
+            return decoded
+        except Exception as e:
+            print(f"Failed to decode {file_path}: {e}")
+            return ""
+    
+    return ""
+
+def select_main_repo(username: str) -> str:
+    """Select the most interesting repo from user's repositories"""
+    url = f"{GITHUB_API}/users/{username}/repos?per_page=100&sort=updated"
+    response = requests.get(url, headers=headers)
+    
+    if response.status_code != 200:
+        raise Exception(f"Failed to fetch repos for {username}: {response.status_code}")
+    
+    repos = response.json()
+    
+    # Filter and score repos
+    scored_repos = []
+    for repo in repos:
+        # Skip forks and very small repos
+        if repo['fork'] or repo['size'] < 10:
+            continue
+            
+        # Score based on activity and size
+        score = (
+            repo['stargazers_count'] * 2 +
+            repo['forks_count'] * 3 +
+            repo['size'] +
+            (100 if not repo['archived'] else 0)
+        )
         
-        for file in files:
-            if any(file.endswith(ext) for ext in relevant_extensions):
-                file_path = os.path.join(root, file)
-                files_to_analyze.append(file_path)
+        scored_repos.append((repo['name'], score, repo))
     
-    print(f"Found {len(files_to_analyze)} files to analyze")
-    return {**state, "files_to_analyze": files_to_analyze}
+    if not scored_repos:
+        # Fallback to first non-fork repo
+        for repo in repos:
+            if not repo['fork']:
+                return repo['name']
+        raise Exception(f"No suitable repos found for {username}")
+    
+    # Return the highest scored repo
+    scored_repos.sort(key=lambda x: x[1], reverse=True)
+    selected_repo = scored_repos[0][0]
+    print(f"Selected repo: {selected_repo} (score: {scored_repos[0][1]})")
+    return selected_repo
+
+def discover_files(state: RepoAnalysisState) -> RepoAnalysisState:
+    """Find all relevant code files in the GitHub repo"""
+    username = state["username"]
+    repo_name = state["repo_name"]
+    
+    files = get_repo_files(username, repo_name)
+    print(f"Found {len(files)} files to analyze in {username}/{repo_name}")
+    
+    return {**state, "repo_files": files}
 
 def static_analysis(file_path: str, content: str) -> Dict:
     """Quick static analysis to extract imports and basic info"""
@@ -238,13 +334,13 @@ async def summarize_analysis(state: RepoAnalysisState) -> RepoAnalysisState:
 async def store_in_chroma(state: RepoAnalysisState) -> RepoAnalysisState:
     """Store all analysis results in Chroma using LangChain integration"""
     
-    repo_path = state["repo_path"]
+    username = state["username"]
+    repo_name = state["repo_name"]
     final_summary = state["final_summary"]
     file_analyses = state["file_analyses"]
     
-    # Create collection name from repo path
-    repo_name = os.path.basename(repo_path.rstrip('/'))
-    collection_name = f"repo_{repo_name}_{hashlib.md5(repo_path.encode()).hexdigest()[:8]}"
+    # Create collection name from repo info
+    collection_name = f"repo_{username}_{repo_name}_{hashlib.md5(f'{username}/{repo_name}'.encode()).hexdigest()[:8]}"
     
     print(f"Storing in Chroma collection: {collection_name}")
     
@@ -263,7 +359,7 @@ async def store_in_chroma(state: RepoAnalysisState) -> RepoAnalysisState:
         # 1. Store project-level summary
         if final_summary:
             summary_text = f"""
-            Project: {repo_name}
+            Project: {username}/{repo_name}
             Tech Stack: {', '.join(final_summary.get('tech_stack', []))}
             Architecture: {final_summary.get('architecture_overview', '')}
             Top Frameworks: {', '.join([fw.get('name', str(fw)) for fw in final_summary.get('top_frameworks', [])[:5]])}
@@ -275,7 +371,7 @@ async def store_in_chroma(state: RepoAnalysisState) -> RepoAnalysisState:
                 metadata={
                     "type": "project_summary",
                     "repo_name": repo_name,
-                    "repo_path": repo_path,
+                    "username": username,
                     "level": "project"
                 }
             )
@@ -291,7 +387,8 @@ async def store_in_chroma(state: RepoAnalysisState) -> RepoAnalysisState:
                 
                 # Create rich document text
                 file_doc_text = f"""
-                File: {os.path.relpath(file_path, repo_path)}
+                File: {file_path}
+                Repository: {username}/{repo_name}
                 Purpose: {file_analysis.get('file_purpose', '')}
                 Frameworks: {', '.join(file_analysis.get('frameworks', []))}
                 Concepts: {', '.join(file_analysis.get('concepts', []))}
@@ -307,7 +404,7 @@ async def store_in_chroma(state: RepoAnalysisState) -> RepoAnalysisState:
                         "file_name": os.path.basename(file_path),
                         "file_type": analysis.get('file_type', ''),
                         "repo_name": repo_name,
-                        "repo_path": repo_path,
+                        "username": username,
                         "level": "file",
                         # Convert lists to strings for Chroma compatibility
                         "frameworks": ', '.join(file_analysis.get('frameworks', [])),
@@ -326,6 +423,7 @@ async def store_in_chroma(state: RepoAnalysisState) -> RepoAnalysisState:
                 
                 concept_doc_text = f"""
                 Concept: {concept_name}
+                Repository: {username}/{repo_name}
                 Used in {concept_count} files across the {repo_name} project.
                 This concept is part of the project's core functionality and technical implementation.
                 """
@@ -337,7 +435,7 @@ async def store_in_chroma(state: RepoAnalysisState) -> RepoAnalysisState:
                         "concept": concept_name,
                         "frequency": concept_count,
                         "repo_name": repo_name,
-                        "repo_path": repo_path,
+                        "username": username,
                         "level": "concept"
                     }
                 )
@@ -372,25 +470,36 @@ async def store_in_chroma(state: RepoAnalysisState) -> RepoAnalysisState:
 # Mapping function for Send API
 def continue_to_file_analysis(state: RepoAnalysisState):
     """Map discovered files to parallel analysis tasks"""
-    files_to_analyze = state["files_to_analyze"]
+    username = state["username"]
+    repo_name = state["repo_name"]
+    repo_files = state["repo_files"]
     
-    # Read file contents and create Send objects
+    # Create Send objects for each file
     send_objects = []
-    for file_path in files_to_analyze:
-        try:
-            with open(file_path, 'r', encoding='utf-8', errors='ignore') as f:
-                content = f.read()
+    for file_info in repo_files:
+        file_path = file_info['path']
+        
+        # Skip very large files to avoid API limits
+        if file_info.get('size', 0) > 100000:  # 100KB limit
+            print(f"Skipping large file: {file_path}")
+            continue
             
-            file_ext = os.path.splitext(file_path)[1]
+        # Get file content from GitHub
+        content = get_file_content(username, repo_name, file_path)
+        if not content:
+            continue
             
-            send_objects.append(Send("analyze_file", {
-                "file_path": file_path,
-                "file_content": content,
-                "file_type": file_ext
-            }))
-        except Exception as e:
-            print(f"Failed to read {file_path}: {e}")
+        file_ext = os.path.splitext(file_path)[1]
+        
+        send_objects.append(Send("analyze_file", {
+            "username": username,
+            "repo_name": repo_name,
+            "file_path": file_path,
+            "file_content": content,
+            "file_type": file_ext
+        }))
     
+    print(f"Sending {len(send_objects)} files for analysis")
     return send_objects
 
 # Build the repo analysis graph
@@ -466,12 +575,69 @@ async def analyze_repo(repo_path: str):
     
     return result
 
-# Example usage
+
+
+
+# Main execution function
+async def analyze_github_user(username: str):
+    """Run the complete repo analysis for a GitHub user"""
+    
+    try:
+        # Select the main repo to analyze
+        repo_name = select_main_repo(username)
+        print(f"Analyzing {username}/{repo_name}")
+        
+        graph = create_repo_analysis_graph()
+        
+        # Save visualization
+        graph.get_graph(xray=True).draw_mermaid_png(
+            output_file_path="repo_analysis_graph.png"
+        )
+        
+        initial_state = {
+            "username": username,
+            "repo_name": repo_name,
+            "repo_files": [],
+            "file_analyses": [],
+            "final_summary": None,
+            "chroma_collection": None,
+            "stored_documents": 0
+        }
+        
+        print(f"Starting repo analysis for: {username}/{repo_name}")
+        print("="*60)
+        
+        # Execute analysis
+        result = await graph.ainvoke(initial_state)
+        
+        # Print results
+        final_summary = result["final_summary"]
+        if final_summary:
+            print("\n🎯 REPO ANALYSIS COMPLETE!")
+            print(f"\n📊 Tech Stack: {', '.join(final_summary.get('tech_stack', [])[:5])}")
+            print(f"\n🏗️ Architecture: {final_summary.get('architecture_overview', '')}")
+            print(f"\n📈 Top Frameworks:")
+            for fw in final_summary.get('top_frameworks', [])[:5]:
+                print(f"  • {fw.get('name', fw)}: {fw.get('count', 'N/A')} files")
+            print(f"\n💡 Key Concepts:")
+            for concept in final_summary.get('key_concepts', [])[:8]:
+                print(f"  • {concept.get('concept', concept)}")
+            
+            print(f"\n💾 Stored in Chroma collection: {result.get('chroma_collection', 'N/A')}")
+            print(f"📄 Documents stored: {result.get('stored_documents', 0)}")
+        
+        return result
+        
+    except Exception as e:
+        print(f"Failed to analyze user {username}: {e}")
+
+
+
 if __name__ == "__main__":
-    import asyncio
-    
-    # Test with current directory or specify a repo path
-    repo_path = os.getenv("TEST_REPO_PATH")  # Change this!
-    # repo_path = "."  # Current directory
-    
-    asyncio.run(analyze_repo(repo_path))
+   import asyncio
+   
+   # Test with a specific GitHub username
+   test_username = "w-foster"
+   
+   print(f"Testing GitHub analysis for user: {test_username}")
+   asyncio.run(analyze_github_user(test_username))
