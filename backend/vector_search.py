@@ -179,7 +179,7 @@ def search_user_contributions(
         )
 
 
-def search_across_all_collections(
+def search_across_all_relevant_collections(
     interview_question: str, k_per_collection: int = 5, score_threshold: float = 0.5
 ) -> Dict[str, VectorSearchResponse]:
     """
@@ -193,10 +193,11 @@ def search_across_all_collections(
     Returns:
         Dictionary mapping collection names to search responses
     """
-    collections = list_available_collections()
+    collections = list_relevant_collections(interview_question)
     results = {}
 
-    for collection_name in collections:
+    for collection_info in collections:
+        collection_name = collection_info["collection_name"]
         try:
             search_response = search_user_contributions(
                 interview_question, collection_name, k_per_collection, score_threshold
@@ -208,8 +209,6 @@ def search_across_all_collections(
             continue
 
     return results
-
-
 
 
 def main():
@@ -279,7 +278,7 @@ def main():
     print(f"\n5. Cross-Collection Search Results:")
     print("-" * 70)
 
-    all_results = search_across_all_collections(
+    all_results = search_across_all_relevant_collections(
         sample_query, k_per_collection=2, score_threshold=1.0
     )
 
