@@ -23,26 +23,17 @@ const AIInterview = ({ job, onBack }: AIInterviewProps) => {
 
   const startInterview = async () => {
     try {
-      // Request microphone permission and get stream
       const micStream = await navigator.mediaDevices.getUserMedia({ audio: true });
 
-      // Start session with mic stream and dynamicVariables (passing job description)
-      const id = await convo.startSession({
+      const id = await (convo as any).startSession({
         agentId: 'agent_01jyv4f4b3fv1s5fhysv8sh82b',
         userAudioStream: micStream,
         dynamicVariables: {
           job_summary: job.description,
-          question_count: 2,  // example variable, you can change or remove if unused
+          question_count: 2,
         },
-        // Optional: you can still add prompt overrides if your backend supports it
-        // overrides: {
-        //   agent: {
-        //     firstMessage: "Hello! I'm your AI interviewer today. Let's start with you telling me about yourself and your relevant experience for this position."
-        //   }
-        // }
       });
 
-      // Store micStream so you can stop it on end
       (convo as any).micStream = micStream;
 
       setSessionId(id);
