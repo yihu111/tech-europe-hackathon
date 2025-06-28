@@ -112,7 +112,7 @@ def list_relevant_collections(query: str, max_collections: int = 10) -> List[Dic
 
 
 def search_user_contributions(
-    interview_question: str, collection_name: str, k: int = 10
+    interview_question: str, collection_name: str, k: int = 10, score_threshold: float = 0.5
 ) -> VectorSearchResponse:
     """
     Search for relevant user contributions based on an interview question.
@@ -121,6 +121,7 @@ def search_user_contributions(
         interview_question: The interview question to find relevant experience for
         collection_name: ChromaDB collection name to search
         k: Number of results to return
+        score_threshold: Maximum similarity score to include (lower = more similar)
 
     Returns:
         VectorSearchResponse with ranked results
@@ -146,14 +147,16 @@ def search_user_contributions(
 
         search_results = []
         for doc, score in results:
-            search_results.append(
-                SearchResult(
-                    content=doc.page_content,
-                    score=float(score),
-                    metadata=doc.metadata,
-                    type=doc.metadata.get("type", "unknown"),
+            # Filter by score threshold (lower scores = better similarity)
+            if score <= score_threshold:
+                search_results.append(
+                    SearchResult(
+                        content=doc.page_content,
+                        score=float(score),
+                        metadata=doc.metadata,
+                        type=doc.metadata.get("type", "unknown"),
+                    )
                 )
-            )
 
         return VectorSearchResponse(
             query=interview_question,
@@ -173,7 +176,7 @@ def search_user_contributions(
 
 
 def search_across_all_collections(
-    interview_question: str, k_per_collection: int = 5
+    interview_question: str, k_per_collection: int = 5, score_threshold: float = 0.5
 ) -> Dict[str, VectorSearchResponse]:
     """
     Search across all available collections for relevant contributions.
@@ -181,6 +184,7 @@ def search_across_all_collections(
     Args:
         interview_question: The interview question to find relevant experience for
         k_per_collection: Number of results per collection
+        score_threshold: Maximum similarity score to include (lower = more similar)
 
     Returns:
         Dictionary mapping collection names to search responses
@@ -191,7 +195,7 @@ def search_across_all_collections(
     for collection_name in collections:
         try:
             search_response = search_user_contributions(
-                interview_question, collection_name, k_per_collection
+                interview_question, collection_name, k_per_collection, score_threshold
             )
             if search_response.total_results > 0:
                 results[collection_name] = search_response
@@ -289,7 +293,7 @@ def main():
 
     if relevant_collections:
         top_collection = relevant_collections[0]["collection_name"]
-        results = search_user_contributions(sample_query, top_collection, k=3)
+        results = search_user_contributions(sample_query, top_collection, k=3, score_threshold=0.4)
 
         print(f"Collection: {results.collection_name}")
         print(f"Total Results: {results.total_results}")
@@ -303,7 +307,7 @@ def main():
     print(f"\n5. Cross-Collection Search Results:")
     print("-" * 70)
 
-    all_results = search_across_all_collections(sample_query, k_per_collection=2)
+    all_results = search_across_all_collections(sample_query, k_per_collection=2, score_threshold=0.4)
 
     for collection_name, response in all_results.items():
         print(f"\nCollection: {collection_name}")
