@@ -40,7 +40,7 @@ const JobSearch = ({ onStartInterview }: JobSearchProps) => {
         headers: {
           "Content-Type": "application/json",
         },
-        body: JSON.stringify({ query: searchQuery }),
+        body: JSON.stringify({ username: searchQuery }),
       });
       
       if (!response.ok) {
