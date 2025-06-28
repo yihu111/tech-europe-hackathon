@@ -12,8 +12,6 @@ from fastapi.middleware.cors import CORSMiddleware
 from vector_search import (
     list_available_collections, 
     search_user_contributions, 
-    search_across_all_collections,
-    get_collection_info,
     VectorSearchResponse
 )
 
@@ -100,6 +98,33 @@ def get_repos_and_data(username: str):
 
     return result
 
+from collections import defaultdict
+
+
+def get_aggregated_repo_data(username: str):
+    repos_data = get_repos_and_data(username)  # your existing function
+    
+    combined_languages = defaultdict(int)
+    combined_frameworks = defaultdict(int)
+
+    for repo in repos_data:
+        # Merge languages (sum values if numeric)
+        for lang, value in repo.get("languages", {}).items():
+            # Assuming value is lines of code or similar metric
+            combined_languages[lang] += value
+        
+        # Combine frameworks (count occurrences)
+        for fw in repo.get("frameworks", []):
+            combined_frameworks[fw] += 1
+    
+    # Convert defaultdicts back to normal dict or list
+    combined_languages = dict(combined_languages)
+    combined_frameworks = list(combined_frameworks.keys())  # Or keep dict if you want counts
+    
+    return {
+        "languages": combined_languages,
+        "frameworks": combined_frameworks,
+    }
 
 
 
@@ -115,7 +140,7 @@ class SearchRequest(BaseModel):
 
 
 
-from pipeline.knowledge_pipeline import analyze_github_user
+from knowledge_pipeline import analyze_github_user
 
 @app.post("/overview")
 async def overview(request: SearchRequest):
@@ -124,12 +149,14 @@ async def overview(request: SearchRequest):
     """
     try:
         # Call your knowledge pipeline with the username
-        result = await analyze_github_user(request.username)
-        
+        # result = await analyze_github_user(request.username)
+        result = get_aggregated_repo_data(request.username)
+        print(result)
         return {
             "status": "success",
             "username": request.username,
-            "message": "Knowledge extraction completed"
+            "message": "Knowledge extraction completed",
+            "result": result
         }
         
     except Exception as e:
@@ -137,9 +164,7 @@ async def overview(request: SearchRequest):
    
 
 
-from jobsearch.job_search_agent import run_job_search
-
-from jobsearch.job_search_agent import run_job_search
+#from jobsearch.job_search_agent import run_job_search
 
 @app.post("/jobsearch")
 async def jobSearch(request: SearchRequest):
@@ -148,7 +173,7 @@ async def jobSearch(request: SearchRequest):
     """
     try:
         # Call your job search function - returns list of dicts with "description" and "url"
-        jobs = await run_job_search()
+        #jobs = await run_job_search()
         # [{"description": <job desc>, "url": <job page url}, {"description": <job desc>, "url": <job page url}. {"description": <job desc>, "url": <job page url},]
         
         return jobs
